@@ -4,7 +4,7 @@ from tkinter import messagebox, simpledialog
 from tkinter.colorchooser import askcolor
 import configparser
 import re
-import legacy_conversion
+import legacy_conversion  # import legacy conversion module
 from computer import Memory, CPU
 
 class MainWindow(tk.Frame):
@@ -44,24 +44,95 @@ class MainWindow(tk.Frame):
         execute_program_button = tk.Button(execute_button_frame, text="Execute Program", command=self.execute_program)
         execute_program_button.pack(padx=5)
 
-        # Text editor for direct command editing.
+        # Create the text editor and force removal of the default paste commands.
         self.text_editor = tk.Text(self, width=50, height=20)
         self.text_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+        # Unbind the default paste events.
+        self.text_editor.unbind("<<Paste>>")
+        self.text_editor.unbind("<Control-v>")
+        self.text_editor.unbind("<Control-V>")
+        # Bind our custom paste handler.
+        self.text_editor.bind("<<Paste>>", self.handle_paste)
+        self.text_editor.bind("<Control-v>", self.handle_paste)
+        self.text_editor.bind("<Control-V>", self.handle_paste)
+        # Bind the Return (Enter) key to a custom handler to prevent exceeding 250 lines.
+        self.text_editor.bind("<Return>", self.handle_return)
 
     def new_program(self):
-        """
-        Opens a new window with a blank program editor.
-        We use tk.Toplevel so that the new window is a child of the main window.
-        """
         new_window = tk.Toplevel(self.master)
         new_window.title("New Program")
-        # Create a new instance of MainWindow inside the new Toplevel window.
         MainWindow(new_window)
 
+    def handle_paste(self, event):
+        """Custom paste handler that prevents pasting if it would exceed Memory.MAX_LINES."""
+        try:
+            clipboard = self.master.clipboard_get()
+        except Exception:
+            return "break"
+
+        # Get the current text without the extra newline at the end.
+        current_text = self.text_editor.get("1.0", "end-1c")
+        current_lines = current_text.splitlines()
+        current_line_count = len(current_lines)
+
+        # Get the clipboard text lines.
+        paste_lines = clipboard.splitlines()
+        paste_line_count = len(paste_lines)
+
+        # If a selection exists, those lines will be replaced.
+        try:
+            selection = self.text_editor.get("sel.first", "sel.last")
+            selection_line_count = len(selection.splitlines())
+        except tk.TclError:
+            selection_line_count = 0
+
+        effective_line_count = current_line_count - selection_line_count + paste_line_count
+
+        if effective_line_count > Memory.MAX_LINES:
+            messagebox.showerror(
+                "Error",
+                f"Paste not allowed: This paste would result in {effective_line_count} lines, "
+                f"exceeding the maximum of {Memory.MAX_LINES} lines."
+            )
+            return "break"
+        else:
+            # If there is a selection, delete it first.
+            try:
+                self.text_editor.delete("sel.first", "sel.last")
+            except tk.TclError:
+                pass
+            # Insert the clipboard text.
+            self.text_editor.insert("insert", clipboard)
+            return "break"
+
+    def handle_return(self, event):
+        """Prevents insertion of a newline if it would exceed Memory.MAX_LINES."""
+        # Get the current content without the trailing newline.
+        current_text = self.text_editor.get("1.0", "end-1c")
+        current_lines = current_text.splitlines()
+        current_line_count = len(current_lines)
+
+        # Count lines that would be removed if a selection is active.
+        try:
+            selection = self.text_editor.get("sel.first", "sel.last")
+            selection_lines = selection.splitlines()
+            selection_line_count = len(selection_lines)
+        except tk.TclError:
+            selection_line_count = 0
+
+        # Inserting a newline adds one new line.
+        effective_line_count = current_line_count - selection_line_count + 1
+
+        if effective_line_count > Memory.MAX_LINES:
+            messagebox.showerror(
+                "Error",
+                f"Cannot insert new line: Maximum of {Memory.MAX_LINES} lines reached."
+            )
+            return "break"
+        # Otherwise, allow the insertion of the newline (default behavior).
+        return None
+
     def load_program(self):
-        """Loads a program file and displays its content in the text editor.
-        If the file is in legacy format, it is automatically converted.
-        """
         program_file_name = askopenfilename(title="Select Program File")
         if not program_file_name:
             return
@@ -70,7 +141,6 @@ class MainWindow(tk.Frame):
             with open(program_file_name, 'r') as program_file:
                 lines = program_file.readlines()
 
-            # Check if the file uses the new six-digit format.
             new_format_pattern = re.compile(r'^-?\d{6}$')
             is_new_format = True
             for line in lines:
@@ -82,12 +152,10 @@ class MainWindow(tk.Frame):
                     break
 
             if not is_new_format:
-                # Run legacy conversion.
                 conversion_success = legacy_conversion.convert_program_format(program_file_name)
                 if not conversion_success:
                     messagebox.showerror("Error", "Legacy conversion failed. Cannot load file.")
                     return
-                # After conversion, re-read the file.
                 with open(program_file_name, 'r') as program_file:
                     content = program_file.read()
             else:
@@ -101,7 +169,6 @@ class MainWindow(tk.Frame):
             messagebox.showerror("Error", f"An error occurred: {e}")
 
     def save_program(self):
-        """Saves the current program from the text editor to a file, with validation."""
         file_path = asksaveasfilename(title="Save Program As", defaultextension=".txt",
                                       filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
         if not file_path:
@@ -119,8 +186,8 @@ class MainWindow(tk.Frame):
                 messagebox.showerror("Error", f"Invalid instruction found: '{line}'. Fix it before saving.")
                 return
 
-        if len(validated_instructions) > 250:
-            messagebox.showerror("Error", "Program exceeds the maximum size of 250 instructions.")
+        if len(validated_instructions) > Memory.MAX_LINES:
+            messagebox.showerror("Error", f"Program exceeds the maximum size of {Memory.MAX_LINES} instructions.")
             return
 
         try:
@@ -132,7 +199,6 @@ class MainWindow(tk.Frame):
             messagebox.showerror("Error", f"Failed to save program: {e}")
 
     def change_color(self):
-        """Opens a window to select colors for various UI elements."""
         color_window = tk.Toplevel(self)
         color_window.title("Change Colors")
         tk.Label(color_window, text="Select which color to change:").pack(padx=10, pady=10)
@@ -142,14 +208,13 @@ class MainWindow(tk.Frame):
         tk.Button(color_window, text="Button Background", command=self.select_button_background).pack(padx=5, pady=5)
 
     def execute_program(self):
-        """Loads instructions from the text editor into memory and runs the CPU."""
         content = self.text_editor.get("1.0", tk.END).strip()
         lines = content.split("\n")
 
         try:
             instructions = [int(line.strip()) for line in lines if line.strip()]
-            if len(instructions) > 250:
-                messagebox.showerror("Error", "Program exceeds the maximum size of 250 instructions.")
+            if len(instructions) > Memory.MAX_LINES:
+                messagebox.showerror("Error", f"Program exceeds the maximum size of {Memory.MAX_LINES} instructions.")
                 return
 
             memory = Memory()
@@ -165,11 +230,9 @@ class MainWindow(tk.Frame):
             messagebox.showerror("Execution Error", f"An error occurred during execution: {e}")
 
     def open_output_window(self, output):
-        """Displays output messages."""
         messagebox.showinfo("Output", output)
 
     def open_input_window(self, prompt):
-        """Prompts the user for input during execution."""
         return simpledialog.askstring("Input", prompt)
 
     def select_window_foreground(self):
