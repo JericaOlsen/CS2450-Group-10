@@ -1,104 +1,176 @@
 import tkinter as tk
-from tkinter.filedialog import askopenfilename
+from tkinter.filedialog import askopenfilename, asksaveasfilename
 from tkinter import messagebox, simpledialog
-from computer import Memory, CPU
+from tkinter.colorchooser import askcolor
 import configparser
+from computer import Memory, CPU
 
 class MainWindow(tk.Frame):
     def __init__(self, master):
         super().__init__(master)
-        memory = Memory()
-        self.cpu = CPU(memory, self.open_output_window, self.open_input_window)
-        self.pack()
+        self.master = master
 
-        config = configparser.ConfigParser()
-        config.read('config.ini')
+        # Load configuration for colors
+        self.config = configparser.ConfigParser()
+        self.config.read('config.ini')
 
+        # Set default options based on configuration
+        self.master.option_add('*foreground', self.config['window']['foreground'])
+        self.master.option_add('*background', self.config['window']['background'])
+        self.master.option_add('*Button.foreground', self.config['button']['foreground'])
+        self.master.option_add('*Button.background', self.config['button']['background'])
 
-        master.option_add('*foreground', config['window']['foreground'])
-        master.option_add('*background', config['window']['background'])
-        master.option_add('*Button.foreground', config['button']['foreground'])
-        master.option_add('*Button.background', config['button']['background'])
+        self.pack(fill=tk.BOTH, expand=True)
 
-        load_program_button = tk.Button(self, text="Load Program", command=self.load_program)
-        execute_program_button = tk.Button(self, text="Execute Program", command=self.execute_program)
+        # Top button frame for Load, Save, New Program, and Change Color
+        top_button_frame = tk.Frame(self)
+        top_button_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
 
-        load_program_button.pack()
-        execute_program_button.pack()
+        load_program_button = tk.Button(top_button_frame, text="Load Program", command=self.load_program)
+        new_program_button = tk.Button(top_button_frame, text="New Program", command= self.new_program) #new button to open a new window for the progam
+        save_program_button = tk.Button(top_button_frame, text="Save Program", command=self.save_program)
+        change_color_button = tk.Button(top_button_frame, text="Change Color", command=self.change_color)
+        load_program_button.pack(side=tk.LEFT, padx=5)
+        save_program_button.pack(side=tk.LEFT, padx=5)
+        change_color_button.pack(side=tk.LEFT, padx=5)
+        new_program_button.pack(side=tk.LEFT, padx=5) #added code for new program button
 
+        # Frame for the Execute button below the load/save/new program/change color buttons
+        execute_button_frame = tk.Frame(self)
+        execute_button_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
+        execute_program_button = tk.Button(execute_button_frame, text="Execute Program", command=self.execute_program)
+        execute_program_button.pack(padx=5)
 
+        # Text Editor for direct command editing
+        self.text_editor = tk.Text(self, width=50, height=20)
+        self.text_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
-    def reset_cpu_memory(self):
-        self.memory = Memory()
-        self.cpu= CPU(self.memory, self.open_output_window, self.open_input_window)
+    def new_program(self): #function to open a new window once the new program button is pressed
+        root = tk.Tk()
+        main_window = MainWindow(root)
+        main_window.mainloop()
 
     def load_program(self):
-        program_file_name = askopenfilename()# Load the program from the file
+        """Loads a program file and displays its content in the text editor."""
+        program_file_name = askopenfilename(title="Select Program File")
+        if not program_file_name:
+            return
         try:
-            self.reset_cpu_memory()
             with open(program_file_name, 'r') as program_file:
-                instructions = []
-                for line in program_file:
-                    line = line.strip()
-                    if line and line.lstrip('+-').isdigit():  # Ensure only valid integer lines are processed
-                        instructions.append(int(line))
-                    else:
-                        print(f"Warning: Ignoring invalid instruction: {line}")
-                for i, instruction in enumerate(instructions):
-                    self.cpu.memory.set(i, instruction)
-
+                content = program_file.read()
+            self.text_editor.delete("1.0", tk.END)
+            self.text_editor.insert("1.0", content)
         except FileNotFoundError:
-            self.open_output_window("Error: Program file not found.")
+            messagebox.showerror("Error", "Program file not found.")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+
+    def save_program(self):
+        """Saves the current program from the text editor to a file, with validation."""
+        file_path = asksaveasfilename(title="Save Program As", defaultextension=".txt",
+                                      filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")])
+        if not file_path:
             return
-        except ValueError as e:
-            self.open_output_window(f"Error reading program: {e}")
+
+        content = self.text_editor.get("1.0", tk.END).strip()
+        lines = content.split("\n")
+        validated_instructions = []
+
+        for line in lines:
+            line = line.strip()
+            if line and line.lstrip('+-').isdigit():
+                validated_instructions.append(line)
+            else:
+                messagebox.showerror("Error", f"Invalid instruction found: '{line}'. Fix it before saving.")
+                return
+
+        if len(validated_instructions) > 100:
+            messagebox.showerror("Error", "Program exceeds the maximum size of 100 instructions.")
             return
+
+        try:
+            with open(file_path, 'w') as f:
+                for instr in validated_instructions:
+                    f.write(f"{instr}\n")
+            messagebox.showinfo("Success", "Program saved successfully.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save program: {e}")
+
+    def change_color(self):
+        """Opens a new window to select colors for various UI elements."""
+        color_window = tk.Toplevel(self)
+        color_window.title("Change Colors")
+        tk.Label(color_window, text="Select which color to change:").pack(padx=10, pady=10)
+        tk.Button(color_window, text="Window Foreground", command=self.select_window_foreground).pack(padx=5, pady=5)
+        tk.Button(color_window, text="Window Background", command=self.select_window_background).pack(padx=5, pady=5)
+        tk.Button(color_window, text="Button Foreground", command=self.select_button_foreground).pack(padx=5, pady=5)
+        tk.Button(color_window, text="Button Background", command=self.select_button_background).pack(padx=5, pady=5)
 
     def execute_program(self):
-        self.cpu.execute()
-        
+        """Loads instructions from the text editor into memory and runs the CPU."""
+        content = self.text_editor.get("1.0", tk.END).strip()
+        lines = content.split("\n")
+
+        try:
+            instructions = [int(line.strip()) for line in lines if line.strip()]
+            if len(instructions) > 100:
+                messagebox.showerror("Error", "Program exceeds the maximum size of 100 instructions.")
+                return
+
+            memory = Memory()
+            cpu = CPU(memory, self.open_output_window, self.open_input_window)
+
+            for i, instr in enumerate(instructions):
+                memory.set(i, instr)
+
+            cpu.execute()
+        except ValueError:
+            messagebox.showerror("Error", "Program contains invalid instructions. Please check before executing.")
+        except Exception as e:
+            messagebox.showerror("Execution Error", f"An error occurred during execution: {e}")
 
     def open_output_window(self, output):
-        # Close any existing output window
-        if hasattr(self, 'output_window') and self.output_window.winfo_exists():
-            self.output_window.destroy()
-
-        self.output_window = tk.Toplevel(self)
-        self.output_window.title("Output")
-
-        label = tk.Label(self.output_window, text=output, fg="#333333", bg="#f0f0f0")  # Text and background color
-        label.pack(padx=20, pady=10)
-
-        close_button = tk.Button(self.output_window, text="Close", command=self.output_window.destroy)    
-        close_button.pack(pady=5)
+        """Displays output messages."""
+        messagebox.showinfo("Output", output)
 
     def open_input_window(self, prompt):
-        # Close any existing input window
-        if hasattr(self, 'input_window') and self.input_window.winfo_exists():
-            self.input_window.destroy()
+        """Prompts the user for input during execution."""
+        return simpledialog.askstring("Input", prompt)
 
-        self.input_window = tk.Toplevel(self)
-        self.input_window.title("Input")
+    def select_window_foreground(self):
+        chosen = askcolor()[1]
+        if chosen:
+            self.config['window']['foreground'] = chosen
+            with open('config.ini', 'w') as config_file:
+                self.config.write(config_file)
+            self.master.option_add('*foreground', chosen)
 
-        label = tk.Label(self.input_window, text=prompt)
-        label.pack(padx=20, pady=10)
+    def select_window_background(self):
+        chosen = askcolor()[1]
+        if chosen:
+            self.config['window']['background'] = chosen
+            with open('config.ini', 'w') as config_file:
+                self.config.write(config_file)
+            self.master.option_add('*background', chosen)
 
-        input_value = tk.StringVar()
-        input_entry = tk.Entry(self.input_window, textvariable=input_value)
-        input_entry.pack(pady=5)
-        input_entry.focus_set()
+    def select_button_foreground(self):
+        chosen = askcolor()[1]
+        if chosen:
+            self.config['button']['foreground'] = chosen
+            with open('config.ini', 'w') as config_file:
+                self.config.write(config_file)
+            self.master.option_add('*Button.foreground', chosen)
 
-         # Handle input submission
-        def on_submit():
-            self.user_input = input_value.get()
-            self.input_window.destroy()
+    def select_button_background(self):
+        chosen = askcolor()[1]
+        if chosen:
+            self.config['button']['background'] = chosen
+            with open('config.ini', 'w') as config_file:
+                self.config.write(config_file)
+            self.master.option_add('*Button.background', chosen)
 
-        submit_button = tk.Button(self.input_window, text="Submit",
-                              command=on_submit)  # Button color
-        submit_button.pack(pady=5)
-
-        # Wait until the window is closed
-        self.input_window.wait_window()
-
-        # Return user input after window is closed
-        return self.user_input
+if __name__ == "__main__":
+    root = tk.Tk()
+    root.title("Program Editor")
+    app = MainWindow(root)
+    root.mainloop()
