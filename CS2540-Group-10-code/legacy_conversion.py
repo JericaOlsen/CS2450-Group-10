@@ -10,12 +10,12 @@ def convert_program_format(program_file_name):
 
         if word > 9999:
           messagebox.showerror(f"\"{line}\" is not valid instruction")
-          return
+          return False
 
         old_instructions.append(word)
       except ValueError:
         messagebox.showerror(f"\"{line}\" is not valid instruction")
-        return
+        return False
 
   for instruction in old_instructions:
     opcode, operand = divmod(instruction, 100) # Extract opcode and operand
@@ -24,17 +24,21 @@ def convert_program_format(program_file_name):
 
 
   with open(program_file_name, "w") as program_file:
-    print(new_instructions)
     for word in new_instructions:
-      program_file.write(f"{str(word)}\n")
+      program_file.write(f"{word:06d}\n")
+
+  return True
 
 
 def main(args):
   if len(args) < 2:
     print("Too few arguments.")
+    return 1
   elif len(args) > 2:
     print("Too many arguments.")
+    return 1
   convert_program_format(args[1])
+  return 0
 
 if __name__ == '__main__':
   import sys
