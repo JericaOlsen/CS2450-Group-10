@@ -3,6 +3,8 @@ from tkinter.filedialog import askopenfilename, asksaveasfilename
 from tkinter import messagebox, simpledialog
 from tkinter.colorchooser import askcolor
 import configparser
+import re
+import legacy_conversion
 from computer import Memory, CPU
 
 class MainWindow(tk.Frame):
@@ -10,11 +12,11 @@ class MainWindow(tk.Frame):
         super().__init__(master)
         self.master = master
 
-        # Load configuration for colors
+        # Load configuration for colors.
         self.config = configparser.ConfigParser()
         self.config.read('config.ini')
 
-        # Set default options based on configuration
+        # Set default options based on configuration.
         self.master.option_add('*foreground', self.config['window']['foreground'])
         self.master.option_add('*background', self.config['window']['background'])
         self.master.option_add('*Button.foreground', self.config['button']['foreground'])
@@ -22,35 +24,75 @@ class MainWindow(tk.Frame):
 
         self.pack(fill=tk.BOTH, expand=True)
 
-        # Top button frame for Load, Save, and Change Color
+        # Top button frame for Load, Save, New Program, and Change Color.
         top_button_frame = tk.Frame(self)
         top_button_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
 
         load_program_button = tk.Button(top_button_frame, text="Load Program", command=self.load_program)
+        new_program_button = tk.Button(top_button_frame, text="New Program", command=self.new_program)
         save_program_button = tk.Button(top_button_frame, text="Save Program", command=self.save_program)
         change_color_button = tk.Button(top_button_frame, text="Change Color", command=self.change_color)
+
         load_program_button.pack(side=tk.LEFT, padx=5)
         save_program_button.pack(side=tk.LEFT, padx=5)
         change_color_button.pack(side=tk.LEFT, padx=5)
+        new_program_button.pack(side=tk.LEFT, padx=5)
 
-        # Frame for the Execute button below the load/save/change color buttons
+        # Frame for the Execute button.
         execute_button_frame = tk.Frame(self)
         execute_button_frame.pack(side=tk.TOP, fill=tk.X, pady=5)
         execute_program_button = tk.Button(execute_button_frame, text="Execute Program", command=self.execute_program)
         execute_program_button.pack(padx=5)
 
-        # Text Editor for direct command editing
+        # Text editor for direct command editing.
         self.text_editor = tk.Text(self, width=50, height=20)
         self.text_editor.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
 
+    def new_program(self):
+        """
+        Opens a new window with a blank program editor.
+        We use tk.Toplevel so that the new window is a child of the main window.
+        """
+        new_window = tk.Toplevel(self.master)
+        new_window.title("New Program")
+        # Create a new instance of MainWindow inside the new Toplevel window.
+        MainWindow(new_window)
+
     def load_program(self):
-        """Loads a program file and displays its content in the text editor."""
+        """Loads a program file and displays its content in the text editor.
+        If the file is in legacy format, it is automatically converted.
+        """
         program_file_name = askopenfilename(title="Select Program File")
         if not program_file_name:
             return
+
         try:
             with open(program_file_name, 'r') as program_file:
-                content = program_file.read()
+                lines = program_file.readlines()
+
+            # Check if the file uses the new six-digit format.
+            new_format_pattern = re.compile(r'^-?\d{6}$')
+            is_new_format = True
+            for line in lines:
+                trimmed = line.strip()
+                if trimmed == "":
+                    continue
+                if not new_format_pattern.fullmatch(trimmed):
+                    is_new_format = False
+                    break
+
+            if not is_new_format:
+                # Run legacy conversion.
+                conversion_success = legacy_conversion.convert_program_format(program_file_name)
+                if not conversion_success:
+                    messagebox.showerror("Error", "Legacy conversion failed. Cannot load file.")
+                    return
+                # After conversion, re-read the file.
+                with open(program_file_name, 'r') as program_file:
+                    content = program_file.read()
+            else:
+                content = "".join(lines)
+
             self.text_editor.delete("1.0", tk.END)
             self.text_editor.insert("1.0", content)
         except FileNotFoundError:
@@ -77,8 +119,8 @@ class MainWindow(tk.Frame):
                 messagebox.showerror("Error", f"Invalid instruction found: '{line}'. Fix it before saving.")
                 return
 
-        if len(validated_instructions) > 100:
-            messagebox.showerror("Error", "Program exceeds the maximum size of 100 instructions.")
+        if len(validated_instructions) > 250:
+            messagebox.showerror("Error", "Program exceeds the maximum size of 250 instructions.")
             return
 
         try:
@@ -90,7 +132,7 @@ class MainWindow(tk.Frame):
             messagebox.showerror("Error", f"Failed to save program: {e}")
 
     def change_color(self):
-        """Opens a new window to select colors for various UI elements."""
+        """Opens a window to select colors for various UI elements."""
         color_window = tk.Toplevel(self)
         color_window.title("Change Colors")
         tk.Label(color_window, text="Select which color to change:").pack(padx=10, pady=10)
@@ -106,12 +148,12 @@ class MainWindow(tk.Frame):
 
         try:
             instructions = [int(line.strip()) for line in lines if line.strip()]
-            if len(instructions) > 100:
-                messagebox.showerror("Error", "Program exceeds the maximum size of 100 instructions.")
+            if len(instructions) > 250:
+                messagebox.showerror("Error", "Program exceeds the maximum size of 250 instructions.")
                 return
 
             memory = Memory()
-            cpu = CPU(memory, self.open_output_window, self.open_input_window)
+            cpu = CPU(memory, self.open_input_window, self.open_output_window)
 
             for i, instr in enumerate(instructions):
                 memory.set(i, instr)
