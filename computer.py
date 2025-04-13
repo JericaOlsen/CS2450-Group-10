@@ -1,168 +1,177 @@
-
-class CPU:
-    """
-    Simulates a basic CPU that executes simple machine instructions stored in memory.
-    The CPU has an accumulator for arithmetic operations and a control register (cr) for instruction tracking.
-    """
-
-    def __init__(self, memory, output, input):
-        self.memory: Memory = memory
-        self.accumulator: int = 0  # Accumulator
-        self.cr: int = 0  # Control register
-        self.output = output
-        self.input = input
-
-    def execute(self):
-        """
-        Executes instructions stored in memory until a HALT instruction (opcode 43) is encountered.
-        """
-        while True:
-            instruction = self.memory.get(self.cr)  # Fetch instruction from memory
-            opcode, operand = divmod(instruction, 100)  # Extract opcode and operand
-
-            match opcode:
-                # I/O operation
-                case 10:  # READ
-                    self.read(operand)
-                case 11:  # WRITE
-                    self.write(operand)
-
-                # Load/store operations
-                case 20:  # LOAD
-                    self.load(operand)
-                case 21:  # STORE
-                    self.store(operand)
-
-                # Arithmetic operations
-                case 30:  # ADD
-                    self.add(operand)
-                case 31:  # SUBTRACT
-                    self.subtract(operand)
-                case 32:  # DIVIDE
-                    self.divide(operand)
-                case 33:  # MULTIPLY
-                    self.multiply(operand)
-
-                # Control operations
-                case 40:  # BRANCH
-                    self.branch(operand)
-                case 41:  # BRANCHNEG
-                    self.branchneg(operand)
-                case 42:  # BRANCHZERO
-                    self.branchzero(operand)
-                case 43:  # HALT
-
-                    self.output("Program halted.")
-                    break
-                case _:
-                    self.output(f"Unknown opcode: {opcode}. Halting execution.")
-                    break
-                
-            
-            # move to the next memory address
-            self.cr += 1
-
-    def read(self, operand):
-        while True:
-            try:
-
-                value = int(self.input(f"Enter a value for memory[{operand}]: "))
-                self.memory.set(operand, value)
-                break  # Exit loop on successful input
-            except ValueError:
-                self.output("Invalid input. Please enter an integer.")
-
-    def write(self, operand):
-        value = self.memory.get(operand)
-        self.output(f"Value at memory[{operand}]: {value}")
-
-        value = int(input(f"Enter a value for memory[{operand}]: "))
-        self.memory.set(operand, value)
-
-    def write(self, operand):
-        value = self.memory.get(operand)
-        self.output(f"Value at memory[{operand}]: {value}")
-
-
-    def load(self, operand):
-        self.accumulator = self.memory.get(operand)
-
-    def store(self, operand):
-        self.memory.set(operand, self.accumulator)
-
-    def add(self, operand):
-        self.accumulator += self.memory.get(operand)
-
-    def subtract(self, operand):
-        self.accumulator -= self.memory.get(operand)
-
-    def divide(self, operand):
-        divisor = self.memory.get(operand)
-        if divisor == 0:
-
-            self.output("Error: Division by zero. Halting execution.")
-
-
-            exit(1)
-        self.accumulator //= divisor
-
-    def multiply(self, operand):
-        self.accumulator *= self.memory.get(operand)
-
-    def branch(self, index):
-        """_summary_
-
-        Args:
-            index (int): integer specifying where memory should branch
-        """
-        self.cr = index - 1
-
-        self.output("You have branched to location" + str(index))
-
-
-
-    def branchneg(self,index):
-        """_summary_
-        If accumulator is negative branch to a specific location
-        """
-        if self.accumulator < 0:
-            self.branch(index)
-        else:
-            self.output("Accumulator isn't negative, there was no branching ")
-
-    def branchzero(self,index):
-        """_summary_
-
-        If accumulator is zero branch to a specific location
-        """
-        if self.accumulator == 0:
-            self.branch(index)
-        else:
-            self.output("Accumulator isn't zero, there was no branching ")
+import re
+import sys
 
 class Memory:
     """
-    Simulates memory with a fixed number of integer storage locations.
+    Simulates memory with exactly 250 integer storage locations,
+    each capable of holding a signed six‑digit word.
     """
-    def __init__(self, length=100):
-        self.length = length  # Memory size
-        self.words = [0] * length  # Initialize memory with zeros
+    MAX_LINES = 250
+    MAX_WORD  =  999_999
 
-    def get(self, index) -> int:
-        """
-        Retrieves a value from a specified memory location.
-        """
+    def __init__(self):
+        self.length = Memory.MAX_LINES
+        self.words = [0] * self.length
+
+    def get(self, index: int) -> int:
         if 0 <= index < self.length:
             return self.words[index]
-        raise IndexError("Memory index out of range")
+        raise IndexError(f"Memory index {index:03d} out of range")
 
     def set(self, index: int, value: int):
-        """
-        Stores a value into a specified memory location.
-        """
-        if 0 <= index < self.length:
-            self.words[index] = value
+        if not (0 <= index < self.length):
+            raise IndexError(f"Memory index {index:03d} out of range")
+        if abs(value) > Memory.MAX_WORD:
+            raise ValueError(f"Word overflow: |{value}| > {Memory.MAX_WORD}")
+        self.words[index] = value
+
+
+class CPU:
+    """
+    Basic CPU simulator:
+     - Six‑digit words: ±000000…±999999
+     - Three‑digit addresses: 000…249
+     - Opcodes are still the same numeric codes (010→READ, 011→WRITE, … 043→HALT)
+    """
+    def __init__(self, memory: Memory, input_fn=input, output_fn=print):
+        self.memory      = memory
+        self.accumulator = 0
+        self.cr          = 0  # instruction pointer
+        self.input  = input_fn
+        self.output = output_fn
+
+    def check_overflow(self):
+        if abs(self.accumulator) > Memory.MAX_WORD:
+            self.output("Error: Overflow. Accumulator out of range.")
+            sys.exit(1)
+
+    def execute(self):
+        while True:
+            try:
+                instr = self.memory.get(self.cr)
+            except IndexError:
+                self.output(f"Error: Instruction pointer {self.cr:03d} out of range.")
+                break
+
+            opcode, operand = divmod(instr, 1000)
+
+            # validate operand address
+            if not (0 <= operand < self.memory.length):
+                self.output(f"Invalid memory address: {operand:03d}. Must be 000–249. Halting.")
+                break
+
+            match opcode:
+                case 10:  self.read(operand)      # 010
+                case 11:  self.write(operand)     # 011
+                case 20:  self.load(operand)      # 020
+                case 21:  self.store(operand)     # 021
+                case 30:  self.add(operand)       # 030
+                case 31:  self.subtract(operand)  # 031
+                case 32:  self.divide(operand)    # 032
+                case 33:  self.multiply(operand)  # 033
+                case 40:  self.branch(operand)    # 040
+                case 41:  self.branchneg(operand) # 041
+                case 42:  self.branchzero(operand)# 042
+                case 43:  # HALT (043)
+                    self.output("Program halted.")
+                    break
+                case _:
+                    self.output(f"Unknown opcode: {opcode:03d}. Halting.")
+                    break
+
+            self.cr += 1
+
+    def read(self, addr):
+        while True:
+            try:
+                val = int(self.input(f"Enter value for [{addr:03d}]: "))
+                if abs(val) > Memory.MAX_WORD:
+                    self.output(f"Error: |{val}| exceeds six‑digit limit.")
+                    continue
+                self.memory.set(addr, val)
+                break
+            except ValueError:
+                self.output("Invalid input. Please enter an integer.")
+
+    def write(self, addr):
+        self.output(f"Value at [{addr:03d}]: {self.memory.get(addr)}")
+
+    def load(self, addr):
+        self.accumulator = self.memory.get(addr)
+        self.check_overflow()
+
+    def store(self, addr):
+        self.memory.set(addr, self.accumulator)
+
+    def add(self, addr):
+        self.accumulator += self.memory.get(addr)
+        self.check_overflow()
+
+    def subtract(self, addr):
+        self.accumulator -= self.memory.get(addr)
+        self.check_overflow()
+
+    def divide(self, addr):
+        divisor = self.memory.get(addr)
+        if divisor == 0:
+            self.output("Error: Division by zero. Halting.")
+            sys.exit(1)
+        self.accumulator //= divisor
+        self.check_overflow()
+
+    def multiply(self, addr):
+        self.accumulator *= self.memory.get(addr)
+        self.check_overflow()
+
+    def branch(self, target):
+        if not (0 <= target < self.memory.length):
+            self.output(f"Error: Branch target {target:03d} invalid. Halting.")
+            sys.exit(1)
+        self.cr = target - 1
+        self.output(f"Branched to {target:03d}")
+
+    def branchneg(self, target):
+        if self.accumulator < 0:
+            self.branch(target)
         else:
-            raise IndexError("Memory index out of range")
+            self.output("Accumulator ≥ 0; no branch.")
+
+    def branchzero(self, target):
+        if self.accumulator == 0:
+            self.branch(target)
+        else:
+            self.output("Accumulator ≠ 0; no branch.")
 
 
+def load_program(filename: str, memory: Memory):
+    """
+    Reads up to 250 lines of six‑digit words from `filename` into `memory`.
+    Lines must match optional '-' plus exactly 6 digits.
+    """
+    pattern = re.compile(r'^-?\d{6}$')
+    with open(filename, 'r') as f:
+        lines = [ln.rstrip('\n') for ln in f]
+
+    if len(lines) > memory.length:
+        raise ValueError(f"Program has {len(lines)} lines; max is {memory.length}.")
+
+    for i, line in enumerate(lines):
+        if not pattern.match(line):
+            raise ValueError(f"Invalid word on line {i+1}: '{line}'. Must be ±000000–±999999.")
+        memory.set(i, int(line))
+
+    # zero out the rest
+    for j in range(len(lines), memory.length):
+        memory.set(j, 0)
+
+
+def save_program(filename: str, memory: Memory):
+    """
+    Dumps all 250 memory words to `filename`, one per line,
+    formatted as signed six‑digit numbers (with leading zeros).
+    """
+    with open(filename, 'w') as f:
+        for i in range(memory.length):
+            w = memory.get(i)
+            sign = '-' if w < 0 else ''
+            f.write(f"{sign}{abs(w):06d}\n")
