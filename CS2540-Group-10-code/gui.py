@@ -15,7 +15,7 @@ class MainWindow(tk.Frame):
         # maximums
         self.LINE_LIMIT = 250   # total lines
         self.CHAR_LIMIT = 7     # max characters per line
-        self.WORD_LIMIT = 250   # (optional) still enforce word limit on paste
+        self.WORD_LIMIT = 250   # still enforce word limit on paste
 
         # Load configuration for colors.
         self.config = configparser.ConfigParser()
