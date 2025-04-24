@@ -35,6 +35,7 @@ class MainWindow(tk.Frame):
         tk.Button(top_button_frame, text="Load Program", command=self.load_program).pack(side=tk.LEFT, padx=5)
         tk.Button(top_button_frame, text="Save Program", command=self.save_program).pack(side=tk.LEFT, padx=5)
         tk.Button(top_button_frame, text="Change Color", command=self.change_color).pack(side=tk.LEFT, padx=5)
+        tk.Button(top_button_frame, text="Convert Legacy Program", command=self.convert_legacy_program).pack(side=tk.LEFT, padx=5)
         tk.Button(top_button_frame, text="New Program",  command=self.new_program).pack(side=tk.LEFT, padx=5)
 
         # Execute button
@@ -165,6 +166,24 @@ class MainWindow(tk.Frame):
             return "break"
         return None
 
+    def convert_legacy_program(self):
+        program_file_name = askopenfilename(title="Select Program File")
+        if not program_file_name:
+            return
+
+        try:
+            with open(program_file_name, "r") as program_file:
+                conversion_success = legacy_conversion.convert_program_format(program_file_name)
+                if not conversion_success:
+                    messagebox.showerror("Error", "Legacy conversion failed. Cannot load file.")
+                    return
+        except FileNotFoundError:
+            messagebox.showerror("Error", "Program file not found.")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+
+        messagebox.showinfo("Convert Legacy Program", "The program has been converted to the new format.")
+
     def load_program(self):
         fname = askopenfilename(title="Select Program File")
         if not fname:
@@ -199,12 +218,9 @@ class MainWindow(tk.Frame):
             )
 
             if not is_new:
-                ok = legacy_conversion.convert_program_format(fname)
-                if not ok:
-                    messagebox.showerror("Error", "Legacy conversion failed.")
-                    return
-                with open(fname, 'r') as f:
-                    content = f.read()
+                messagebox.showerror("Error", "File is in the legacy format. Please convert it then load it again.")
+                return
+
             else:
                 content = "".join(raw_lines)
 
@@ -286,12 +302,17 @@ class MainWindow(tk.Frame):
         if c: self.config['button']['background'] = c
 
     def save_colors(self):
-        with open('config.ini', 'w') as cfg:
-            self.config.write(cfg)
-        self.master.option_add('*foreground', self.config['window']['foreground'])
-        self.master.option_add('*background', self.config['window']['background'])
-        self.master.option_add('*Button.foreground', self.config['button']['foreground'])
-        self.master.option_add('*Button.background', self.config['button']['background'])
+        with open("config.ini", "w") as config_file:
+            self.config.write(config_file)
+        self.master.option_add("*foreground", self.config["window"]["foreground"])
+        self.master.option_add("*background", self.config["window"]["background"])
+        self.master.option_add("*Button.foreground", self.config["button"]["foreground"])
+        self.master.option_add("*Button.background", self.config["button"]["background"])
+
+        messagebox.showinfo(
+            "Save Colors",
+            "The selected colors have been saved. They will be loaded when you restart the program.",
+        )
 
     def execute_program(self):
         content = self.text_editor.get("1.0", "end-1c").strip()
